@@ -22,23 +22,30 @@ PERIPHERAL_DEVICE_NAME = "Pico-peripheral"
 # split into two distinct classes for central and peripherial?
 
 class BTSerial():
-    ROLE_CENTAL = "Central"
+    ROLE_CENTRAL = "Central"
     ROLE_PERIPHERAL = "Peripheral"
 
     def __init__(self, role):
-        if role not in [self.ROLE_CENTAL, self.ROLE_PERIPHERAL]:
+        if role not in [self.ROLE_CENTRAL, self.ROLE_PERIPHERAL]:
             raise ValueError("role argument must be BTSerial.ROLE_CENTRAL or BTSerial.ROLE_PERIPHERAL")
         self.role = role
         self.targetDevice = None
-        if role == self.ROLE_CENTAL:
+        self.connection = None
+        if role == self.ROLE_CENTRAL:
             self.name = CENTRAL_DEVICE_NAME
             self.targetDeviceName = PERIPHERAL_DEVICE_NAME
         else:
             self.name = PERIPHERAL_DEVICE_NAME
             self.targetDeviceName = CENTRAL_DEVICE_NAME
     
+    @property
+    def connected(self):
+        if self.targetDevice and self.connection:
+            return self.connection.is_connected()
+        return False
+
     def start(self):
-        if self.role == self.ROLE_CENTAL:
+        if self.role == self.ROLE_CENTRAL:
             self._start_central()
         else:
             self._start_peripheral()
@@ -49,11 +56,16 @@ class BTSerial():
     #     return False
 
     def _start_central(self):
-        if not self.targetDevice:
-            asyncio.create_task(self._scan())
+        pass
 
     def _start_peripheral(self):
-        pass
+        # Register service
+        print("Registering service")
+        self.service = aioble.Service(BLE_SVC_UUID)
+        self.characteristic = aioble.Characteristic(self.service, BLE_CHARACTERISTIC_UUID, read=True, notify=True)
+        aioble.register_services(self.service)
+        print("Service registered")
+        asyncio.create_task(self._peripheral_connect())
 
     def _encode_message(self, message):
         """ Encode a message to bytes """
@@ -64,17 +76,20 @@ class BTSerial():
         return message.decode('utf-8')
 
     async def _scan(self):
+        '''central (receiver) task'''
         print("Scanning devices")
         while True:
-            async with aioble.scan(duration_ms=5000, interval_us=30000, window_us=30000, active=True) as scanner:
-                async for result in scanner:
-                    print("device found:")
-                    print(f"result= {result}, result.name()={result.name()}, result.services()={result.services()}")
-                    if result.name() == self.targetDeviceName \
-                        and BLE_CHARACTERISTIC_UUID in result.services():
-                        print(f"Matching device found: {result.name()}")
-                        self.targetDevice = result.device
-                        return
+            if not self.connected:
+                print("Reconnecting - scanning...")
+                async with aioble.scan(duration_ms=5000, interval_us=30000, window_us=30000, active=True) as scanner:
+                    async for result in scanner:
+                        # print("device found:")
+                        # print(f"result= {result}, result.name()={result.name()}, result.services()={result.services()}")
+                        if result.name() == self.targetDeviceName \
+                            and BLE_CHARACTERISTIC_UUID in result.services():
+                            print(f"Matching device found: {result.name()}")
+                            self.targetDevice = result.device
+                            return
             await asyncio.sleep(1)
 
     async def _central_connect(self):
@@ -83,17 +98,36 @@ class BTSerial():
         while not connection:
             try:
                 connection = await self.targetDevice.connect(timeout_ms=2000)
+                break
             except asyncio.TimeoutError:
                 print("Timeout, retrying")
                 await asyncio.sleep(500)
         print("Connected")
         return connection
-                
+    
+    async def _peripheral_connect(self):
+        '''advertising task for peripheral (transmitter)'''
+        while True:
+            if not self.connected:
+                print("Connecting...")
+                async with await aioble.advertise(
+                    BLE_ADVERTISING_INTERVAL,
+                    name=PERIPHERAL_DEVICE_NAME,
+                    services=[BLE_CHARACTERISTIC_UUID],
+                    appearance=BLE_APPEARANCE,
+                ) as connection:
+                    self.connection = connection
+                    self.targetDevice = connection.device
+                    print("Connection from: ", connection.device)
+                    print(f"connection dir={dir(self.connection)}")
+                    await connection.disconnected(timeout_ms=None)
+                self.connection = None
+                self.targetDevice = None
 
     async def read(self):
-        '''task for central (client)'''
-        # work once launched but fails after server is restarted
-        if self.role != self.ROLE_CENTAL:
+        '''central (receiver) task'''
+        # still have problems with reconnecting to restarted peripheral
+        if self.role != self.ROLE_CENTRAL:
             raise AttributeError("read method is available only for central role")
         while True:
             if not self.targetDevice:
@@ -105,9 +139,9 @@ class BTSerial():
             characteristic = None
             async with connection:
                 while not service or not characteristic:
-                    if not connection.is_connected():
-                        print("Connection closed - read returns")
-                        return
+                    # if not connection.is_connected():
+                    #     print("Connection closed - read returns")
+                    #     return
                     try:
                         service = await connection.service(BLE_SVC_UUID)
                         characteristic = await service.characteristic(BLE_CHARACTERISTIC_UUID)
@@ -120,39 +154,31 @@ class BTSerial():
                 await characteristic.subscribe(notify=True)
                 # Wait for notification and print data
                 while connection.is_connected():
-                    data = await characteristic.notified()
-                    print(f"received data: {self._decode_message(data)}")
-                    await asyncio.sleep(0)
+                    try:
+                        data = await characteristic.notified()
+                        print(f"received data: {self._decode_message(data)}")
+                    except aioble.DeviceDisconnectedError:
+                        print("Device disconnected")
+                        self.targetDevice = None
+                        self.connection = None
+                    finally:
+                        await asyncio.sleep_ms(100)
 
 
     async def write(self):
-        '''task for peripheral (server)'''
-        if self.role != self.ROLE_PERIPHERAL:
-            raise AttributeError("read method is available only for peripheral role")
-        # Register service
-        print("Registering service")
-        service = aioble.Service(BLE_SVC_UUID)
-        characteristic = aioble.Characteristic(service, BLE_CHARACTERISTIC_UUID, read=True, notify=True)
-        aioble.register_services(service)
-        print("Service registered")
-        # Advertise
-        print("Connecting...")
-        connection = None
-        while not connection:
-            connection = await aioble.advertise(
-                BLE_ADVERTISING_INTERVAL,
-                name=PERIPHERAL_DEVICE_NAME,
-                services=[BLE_CHARACTERISTIC_UUID],
-                appearance=BLE_APPEARANCE,
-            )
-            await asyncio.sleep(1)
-        print("connected\nsending data")
-        # Write messages
-        i = 1
+        '''task for peripheral (transmitter)'''
         while True:
-            message = "Hello " + str(i)
-            characteristic.write(self._encode_message(message), send_update=True)
-            print(message, " written")
-            i += 1
-            await asyncio.sleep(1)
+            if self.role != self.ROLE_PERIPHERAL:
+                raise AttributeError("read method is available only for peripheral role")
+          
+            i = 1
+            while True:
+                if self.connected:
+                    # condition not working correctly - doesn't recognize when client disconnects
+                    message = "Hello " + str(i)
+                    self.characteristic.write(self._encode_message(message), send_update=True)
+                    print(message, " written")
+                    i += 1
+                    # print(f"connected={self.targetDevice.is_connected}")
+                await asyncio.sleep(1)
 
