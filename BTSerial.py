@@ -77,9 +77,10 @@ class BTSerial():
 
     async def _scan(self):
         '''central (receiver) task'''
+        print("Scanning devices")
         while True:
-            if not self.targetDevice:
-                print("Scanning devices")
+            if not self.connected:
+                print("Reconnecting - scanning...")
                 async with aioble.scan(duration_ms=5000, interval_us=30000, window_us=30000, active=True) as scanner:
                     async for result in scanner:
                         # print("device found:")
@@ -89,39 +90,40 @@ class BTSerial():
                             print(f"Matching device found: {result.name()}")
                             self.targetDevice = result.device
                             return
-            await asyncio.sleep_ms(100)
+            await asyncio.sleep(1)
 
     async def _central_connect(self):
-        while True:
-            if not self.connected:
-                print("Connecting")
-                if not self.targetDevice:
-                    await self._scan()
-                try:
-                    self.connection = await self.targetDevice.connect(timeout_ms=2000)
-                    return
-                except: # asyncio.TimeoutError:
-                    print("Connecting failed, retrying")
-                await asyncio.sleep(1)
+        print("Connecting")
+        connection = None
+        while not connection:
+            await asyncio.sleep(1)
+            try:
+                connection = await self.targetDevice.connect(timeout_ms=2000)
+                break
+            except asyncio.TimeoutError:
+                print("Timeout, retrying")
+        print("Connected")
+        return connection
     
     async def _peripheral_connect(self):
         '''advertising task for peripheral (transmitter)'''
         while True:
-            #if not self.connected:
-            print("Connecting...")
-            async with await aioble.advertise(
-                BLE_ADVERTISING_INTERVAL,
-                name=PERIPHERAL_DEVICE_NAME,
-                services=[BLE_CHARACTERISTIC_UUID],
-                appearance=BLE_APPEARANCE,
-            ) as connection:
-                self.connection = connection
-                self.targetDevice = connection.device
-                print("Connection from: ", connection.device)
-                print(f"connection dir={dir(self.connection)}")
-                await connection.disconnected(timeout_ms=None)
-            self.connection = None
-            self.targetDevice = None
+            await asyncio.sleep(1)
+            if not self.connected:
+                print("Connecting...")
+                async with await aioble.advertise(
+                    BLE_ADVERTISING_INTERVAL,
+                    name=PERIPHERAL_DEVICE_NAME,
+                    services=[BLE_CHARACTERISTIC_UUID],
+                    appearance=BLE_APPEARANCE,
+                ) as connection:
+                    self.connection = connection
+                    self.targetDevice = connection.device
+                    print("Connection from: ", connection.device)
+                    print(f"connection dir={dir(self.connection)}")
+                    await connection.disconnected(timeout_ms=None)
+                self.connection = None
+                self.targetDevice = None
 
     async def read(self):
         '''central (receiver) task'''
@@ -129,32 +131,40 @@ class BTSerial():
         if self.role != self.ROLE_CENTRAL:
             raise AttributeError("read method is available only for central role")
         while True:
-            await self._central_connect()
-            async with self.connection as conn:
-                # Get service and characteristic
-                try:
-                    service = await conn.service(BLE_SVC_UUID)
-                    characteristic = await service.characteristic(BLE_CHARACTERISTIC_UUID)
-                    # Subscribe for INDICATION.
-                    await characteristic.subscribe(indicate=True)
-                except Exception as e:
-                    print("Error when getting service and characteristic: ", e)
-                    self.targetDevice = None
-                    self.connection = None
+            if not self.targetDevice:
+                await self._scan()
+            
+            connection = await self._central_connect()
+            # Get service and characteristic
+            service = None
+            characteristic = None
+            async with connection:
+                while not service or not characteristic:
                     await asyncio.sleep(1)
-                    continue
-
-                #Wait for indication and print data
-                while self.connected:
+                    # if not connection.is_connected():
+                    #     print("Connection closed - read returns")
+                    #     return
+                    try:
+                        service = await connection.service(BLE_SVC_UUID)
+                        characteristic = await service.characteristic(BLE_CHARACTERISTIC_UUID)
+                    except Exception as e:
+                        print("Error when getting service and characteristic: ", e)
+                    # finally:
+                    #     await asyncio.sleep(1)
+                
+                # Subscribe for notification.
+                await characteristic.subscribe(notify=True)
+                # Wait for notification and print data
+                while connection.is_connected():
                     try:
                         data = await characteristic.indicated()
                         print(f"received data: {self._decode_message(data)}")
                     except aioble.DeviceDisconnectedError:
                         print("Device disconnected")
-                        break
-                self.targetDevice = None
-                self.connection = None
-                await asyncio.sleep_ms(100)
+                        self.targetDevice = None
+                        self.connection = None
+                    finally:
+                        await asyncio.sleep_ms(100)
 
 
     async def write(self):
@@ -171,10 +181,16 @@ class BTSerial():
                 #self.characteristic.notify(self.connection, self._encode_message(message))
                 try:
                     await self.characteristic.indicate(self.connection, self._encode_message(message), timeout_ms=2000)
+                    print(message, " written")
+                    i += 1
                 except:
                     print("writing failed")
-                print(message, " written")
-                i += 1
+            else:
+                print("Connection lost, attempting to reconnect")
+                self.connection = None
+                while not self.connection:
+                    await asyncio.sleep(2)
+                print("Reconnected, resuming message sending.")
                 # print(f"connected={self.targetDevice.is_connected}")
             await asyncio.sleep(1)
 
