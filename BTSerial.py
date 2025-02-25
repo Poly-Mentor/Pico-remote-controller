@@ -46,6 +46,8 @@ class BTSerial():
 
     async def read(self):
         '''task for central (client)'''
+        if self.role != self.ROLE_CENTAL:
+            raise AttributeError("read method is available only for central role")
         # Scan for a device with matching service
         print("Scanning devices")
         target_device = None
@@ -83,6 +85,8 @@ class BTSerial():
 
     async def write(self):
         '''task for peripheral (server)'''
+        if self.role != self.ROLE_PERIPHERAL:
+            raise AttributeError("read method is available only for peripheral role")
         # Register service
         print("Registering service")
         service = aioble.Service(BLE_SVC_UUID)
