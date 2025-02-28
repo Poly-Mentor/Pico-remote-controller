@@ -1,8 +1,4 @@
 import asyncio
-from BTSerial import BTSerial
-
-bt = BTSerial(BTSerial.ROLE_CENTRAL)
-bt.start()
 
 async def someCode():
     while True:
@@ -11,11 +7,7 @@ async def someCode():
 
 
 async def main():
-    other_task = asyncio.create_task(someCode())
-    # read data
-    await bt.read()
-    print("Execution finished")
-    other_task.cancel()
+    pass
 
 try:
     asyncio.run(main())
