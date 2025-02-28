@@ -6,13 +6,14 @@ PASSWORD = "pleasepicoworkthistime"
 
 def initNetwork():
     print("Initializing network")
-    wlan = network.WLAN(network.IF_AP)
+    global wlan
+    wlan = network.WLAN(network.AP_IF)
     network.hostname("transmitter")
     wlan.config(ssid=SSID, key=PASSWORD)
     wlan.active(True)
     print("Network initialized")
 
-def get_connected_clients(wlan):
+def get_connected_clients():
     """
     Gets a list of connected clients in AP mode.
 
@@ -42,7 +43,10 @@ async def connection_detector():
         new_clients = get_connected_clients()
         if check_for_new_clients(new_clients, clients):
             print("New client connected")
-            clients = new_clients
+        if len(new_clients) < len(clients):
+            print("Client disconnected")
+        clients = new_clients
+        #print(clients)
         await asyncio.sleep(1)
 
 async def main():
@@ -56,4 +60,5 @@ try:
 except KeyboardInterrupt:
     print('Interrupted')
 finally:
+    wlan.active(False)
     asyncio.new_event_loop()  # Clear retained state

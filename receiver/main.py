@@ -1,17 +1,39 @@
 import asyncio
+import network
 
-async def someCode():
-    while True:
-        # other code to run
+SSID = "Pico transmitter"
+PASSWORD = "pleasepicoworkthistime"
+
+def initNetwork():
+    print("Initializing network")
+    global wlan
+    wlan = network.WLAN(network.STA_IF)
+    network.hostname("receiver")
+    wlan.active(True)
+    print("Network initialized")
+
+async def connect():
+    global wlan
+    wlan.connect(SSID, PASSWORD)
+    print("Waiting for connection")
+    while not wlan.isconnected():
+        print(wlan.status())
         await asyncio.sleep(1)
-
+    print('network config:', wlan.ifconfig())
 
 async def main():
-    pass
+    initNetwork()
+    await connect()
+    while True:
+        await asyncio.sleep(1)
+
+# ------------------------------------------------------
 
 try:
     asyncio.run(main())
 except KeyboardInterrupt:
     print('Interrupted')
 finally:
-    asyncio.new_event_loop() # Clear retained state
+    wlan.disconnect()
+    wlan.active(False)
+    asyncio.new_event_loop()  # Clear retained state
