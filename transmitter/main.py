@@ -1,8 +1,11 @@
 import asyncio
 import network
+from microdot import Microdot
 
 SSID = "Pico transmitter"
 PASSWORD = "pleasepicoworkthistime"
+
+app = Microdot()
 
 def initNetwork():
     print("Initializing network")
@@ -12,6 +15,7 @@ def initNetwork():
     wlan.config(ssid=SSID, key=PASSWORD)
     wlan.active(True)
     print("Network initialized")
+    print(wlan.ifconfig())
 
 def get_connected_clients():
     """
@@ -49,9 +53,17 @@ async def connection_detector():
         #print(clients)
         await asyncio.sleep(1)
 
+@app.route('/')
+async def index(request):
+    return 'Hello, world!'
+
 async def main():
     initNetwork()
-    await connection_detector()
+    asyncio.create_task(connection_detector())
+    asyncio.create_task(app.start_server(debug=True))
+    while True:
+        await asyncio.sleep(1)
+
 
 # ------------------------------------------------------
 

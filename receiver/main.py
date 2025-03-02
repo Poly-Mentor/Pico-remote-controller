@@ -1,3 +1,4 @@
+import aiohttp
 import asyncio
 import network
 
@@ -21,10 +22,24 @@ async def connect():
         await asyncio.sleep(1)
     print('network config:', wlan.ifconfig())
 
+async def get():
+
+    async with aiohttp.ClientSession() as session:
+        async with session.get('http://192.168.4.1:5000/') as response:
+            print("Status:", response.status)
+            content = await response.text()
+            print(content)
+#             print("Status:", response.status)
+#             print("Content-Type:", response.headers['Content-Type'])
+# 
+#             html = await response.text()
+#             print("Body:", html[:15], "...")
+
 async def main():
     initNetwork()
     await connect()
     while True:
+        await get()
         await asyncio.sleep(1)
 
 # ------------------------------------------------------
