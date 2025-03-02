@@ -1,10 +1,12 @@
 import asyncio
 import network
+from joystick import Joystick
 from microdot import Microdot
 
 SSID = "Pico transmitter"
 PASSWORD = "pleasepicoworkthistime"
 
+joy = Joystick(27, 26, 22)
 app = Microdot()
 
 def initNetwork():
@@ -55,7 +57,9 @@ async def connection_detector():
 
 @app.route('/')
 async def index(request):
-    return 'Hello, world!'
+    joy.read()
+    msg = f"X={joy.X}, Y={joy.Y}"
+    return msg
 
 async def main():
     initNetwork()
@@ -63,7 +67,6 @@ async def main():
     asyncio.create_task(app.start_server(debug=True))
     while True:
         await asyncio.sleep(1)
-
 
 # ------------------------------------------------------
 

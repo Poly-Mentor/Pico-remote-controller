@@ -17,30 +17,28 @@ def initNetwork():
 async def connect():
     global wlan
     wlan.connect(SSID, PASSWORD)
-    print("Waiting for connection")
+    print("Waiting for connection",end='')
     while not wlan.isconnected():
-        print(wlan.status())
+        #print(wlan.status())
+        print('.',end='')
         await asyncio.sleep(1)
-    print('network config:', wlan.ifconfig())
+    print('\nnetwork config:', wlan.ifconfig())
 
 async def get():
 
     async with aiohttp.ClientSession() as session:
         async with session.get(SERVER_URL) as response:
-            print("Status:", response.status)
+            #print("Status:", response.status)
             content = await response.text()
             print(content)
             return content
-
-# ------------------------------------------------------
-
 
 async def main():
     initNetwork()
     await connect()
     while True:
         await get()
-        await asyncio.sleep(1)
+        await asyncio.sleep_ms(250)
 
 # ------------------------------------------------------
 
