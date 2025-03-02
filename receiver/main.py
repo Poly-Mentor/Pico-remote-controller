@@ -4,6 +4,7 @@ import network
 
 SSID = "Pico transmitter"
 PASSWORD = "pleasepicoworkthistime"
+SERVER_URL = 'http://192.168.4.1:5000/'
 
 def initNetwork():
     print("Initializing network")
@@ -25,15 +26,14 @@ async def connect():
 async def get():
 
     async with aiohttp.ClientSession() as session:
-        async with session.get('http://192.168.4.1:5000/') as response:
+        async with session.get(SERVER_URL) as response:
             print("Status:", response.status)
             content = await response.text()
             print(content)
-#             print("Status:", response.status)
-#             print("Content-Type:", response.headers['Content-Type'])
-# 
-#             html = await response.text()
-#             print("Body:", html[:15], "...")
+            return content
+
+# ------------------------------------------------------
+
 
 async def main():
     initNetwork()
