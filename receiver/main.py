@@ -3,7 +3,7 @@ import asyncio
 import network
 
 SSID = "Pico transmitter"
-PASSWORD = "pleasepicoworkthistime"
+PASSWORD = "hellothisispico"
 SERVER_URL = 'http://192.168.4.1:5000/'
 
 def initNetwork():

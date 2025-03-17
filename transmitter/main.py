@@ -4,7 +4,7 @@ from joystick import Joystick
 from microdot import Microdot
 
 SSID = "Pico transmitter"
-PASSWORD = "pleasepicoworkthistime"
+PASSWORD = "hellothisispico"
 
 joy = Joystick(27, 26, 22)
 app = Microdot()
